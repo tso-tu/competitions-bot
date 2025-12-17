@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler
 
-TOKEN = "8561259371:AAE_0kW6FM5hgpTByn3DwFeQ-KXwySCSrws"
+TOKEN = os.environ.get('TOKEN')
 WEB_APP_URL = "https://tso-tu.github.io/competitions-miniapp/"
 
 async def start(update: Update, context):
@@ -48,4 +48,5 @@ async def start(update: Update, context):
 
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
+
 app.run_polling()
