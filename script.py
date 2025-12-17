@@ -73,31 +73,40 @@ def webhook():
     """Получаем обновления от Telegram"""
     try:
         update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        asyncio.run(bot_app.process_update(update))
+        # ✅ ИНИЦИАЛИЗИРУЕМ приложение перед обработкой
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(bot_app.initialize())
+        
+        # Теперь можно обрабатывать обновление
+        loop.run_until_complete(bot_app.process_update(update))
         return 'ok'
     except Exception as e:
         logger.error(f"Ошибка в webhook: {e}")
         return 'error', 500
+    finally:
+        # Останавливаем инициализацию после обработки
+        if loop and not loop.is_closed():
+            loop.run_until_complete(bot_app.shutdown())
+            loop.close()
 
 # === 6. Установка webhook (ВЫПОЛНИТЕ ОДИН РАЗ ПОСЛЕ ДЕПЛОЯ) ===
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
     """Установите webhook - откройте этот URL в браузере после деплоя"""
     try:
-        # Получаем URL сервиса
+        # ✅ Инициализируем приложение
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(bot_app.initialize())
+        
         render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://competitions-bot-ezdu.onrender.com')
         webhook_url = f"{render_url}/webhook"
-        
-        # Устанавливаем webhook
-        asyncio.run(bot_app.bot.set_webhook(webhook_url))
+        loop.run_until_complete(bot_app.bot.set_webhook(webhook_url))
         
         logger.info(f"✅ Webhook установлен на {webhook_url}")
-        return f"""
-        <h1>✅ Webhook установлен!</h1>
-        <p>Webhook URL: {webhook_url}</p>
-        <p>Теперь бот будет получать сообщения.</p>
-        <p>Проверьте бота командой /start в Telegram.</p>
-        """
+        # Не останавливаем приложение здесь, так как оно должно работать для обработки входящих сообщений
+        return f"<h1>✅ Webhook установлен!</h1>"
     except Exception as e:
         logger.error(f"❌ Ошибка установки webhook: {e}")
         return f"❌ Ошибка: {e}"
@@ -113,5 +122,15 @@ def health():
 
 # === 8. Запуск ===
 if __name__ == '__main__':
-    logger.info("🚀 Запускаю сервер...")
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    try:
+        logger.info("🚀 Запускаю сервер...")
+        app.run(host='0.0.0.0', port=8080, debug=False)
+    except KeyboardInterrupt:
+        logger.info("Остановка сервера...")
+    finally:
+        # При остановке Flask-сервера корректно завершаем работу бота
+        if 'bot_app' in locals():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(bot_app.shutdown())
+
