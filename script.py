@@ -6,6 +6,7 @@ from flask import Flask
 from threading import Thread
 import time
 import asyncio
+import nest_asyncio
 
 # === 1. Настройка логирования (ОЧЕНЬ важно для отладки) ===
 logging.basicConfig(
@@ -68,7 +69,7 @@ async def start(update: Update, context):
     )
 
 def run_bot():
-    """Функция для запуска бота в отдельном потоке с собственным event loop"""
+    """Функция для запуска бота в отдельном потоке"""
     if not TOKEN:
         logger.error("КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения 'TOKEN' не задана.")
         return
@@ -76,24 +77,27 @@ def run_bot():
     try:
         logger.info("Запускаю бота в отдельном потоке...")
         
-        # 1. Создаем новый event loop для этого потока
+        # Включаем поддержку вложенных event loops
+        nest_asyncio.apply()
+        
+        # Создаем новый event loop для этого потока
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # 2. Создаем и настраиваем приложение бота
+        # Создаем и настраиваем приложение бота
         app = Application.builder().token(TOKEN).build()
         app.add_handler(CommandHandler("start", start))
         
         logger.info("Бот успешно инициализирован. Начинаю polling...")
         
-        # 3. Запускаем бота в созданном event loop
+        # Запускаем бота в созданном event loop
         loop.run_until_complete(app.run_polling())
         
     except Exception as e:
         logger.error(f"Бот упал с ошибкой: {e}", exc_info=True)
     finally:
         # При завершении закрываем loop
-        if loop and not loop.is_closed():
+        if 'loop' in locals() and loop and not loop.is_closed():
             loop.close()
 
 # === 4. Функция для self-ping (чтобы сервис не засыпал) ===
@@ -132,4 +136,5 @@ if __name__ == '__main__':
     # Для production можно использовать waitress или gunicorn, но для начала хватит и этого.
     logger.info("Запускаю Flask-сервер...")
     app_flask.run(host='0.0.0.0', port=8080)
+
 
