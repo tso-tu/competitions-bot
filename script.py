@@ -1,35 +1,17 @@
 import os
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler
-from flask import Flask
-from threading import Thread
-import threading
-import time
-import asyncio
-import nest_asyncio
+from telegram.ext import Application, CommandHandler, TypeHandler
+from flask import Flask, request, jsonify
 
-# === 1. Настройка логирования (ОЧЕНЬ важно для отладки) ===
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# === 2. Flask app для веб-сервера (чтобы Render был доволен) ===
 app_flask = Flask(__name__)
-
-@app_flask.route('/')
-def home():
-    return "Telegram Bot is running!"
-
-@app_flask.route('/health')
-def health():
-    return "OK", 200
-
-# === 3. Код вашего бота ===
 TOKEN = os.environ.get('TOKEN')
-WEB_APP_URL = "https://tso-tu.github.io/competitions-miniapp/"
+
+# Получаем URL сервиса Render
+RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
+WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}/webhook"
+
+# Инициализация бота
+application = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context):
     bot_username = context.bot.username
@@ -69,61 +51,30 @@ async def start(update: Update, context):
         parse_mode="HTML"
     )
 
-async def run_telegram_bot():
-    """Асинхронная функция для запуска бота"""
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    await app.run_polling()
+# Регистрация обработчика
+application.add_handler(CommandHandler("start", start))
 
-def start_bot_in_background():
-    """Запускает бота в фоновом режиме"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(run_telegram_bot())
+@app_flask.route('/')
+def home():
+    return "Bot is running!"
 
-# === 4. Функция для self-ping (чтобы сервис не засыпал) ===
-def start_ping():
-    """Периодически отправляет запросы к собственному серверу"""
-    import requests
-    while True:
-        try:
-            # Пингуем только если знаем свой публичный URL (т.е. работаем на Render)
-            if 'RENDER_EXTERNAL_URL' in os.environ:
-                url = os.environ['RENDER_EXTERNAL_URL']
-                # Пингуем эндпоинт /health, а не корневой
-                requests.get(f"{url}/health", timeout=10)
-                logger.debug(f"Self-ping отправлен на {url}")
-        except requests.exceptions.RequestException as e:
-            # Логируем ошибку, но не прерываем цикл
-            logger.warning(f"Не удалось отправить ping: {e}")
-        except Exception as e:
-            logger.error(f"Неожиданная ошибка в ping: {e}")
-        # Ждем 4 минуты (меньше 5-минутного таймаута Render)
-        time.sleep(240)
+@app_flask.route('/webhook', methods=['POST'])
+def webhook():
+    """Эндпоинт для получения обновлений от Telegram"""
+    update = Update.de_json(request.get_json(), application.bot)
+    application.update_queue.put_nowait(update)
+    return jsonify({'status': 'ok'})
 
-# === 5. Главная точка входа ===
+@app_flask.route('/set_webhook', methods=['GET'])
+def set_webhook():
+    """Установка webhook (вызовите этот URL после деплоя)"""
+    import asyncio
+    
+    async def _set():
+        await application.bot.set_webhook(WEBHOOK_URL)
+    
+    asyncio.run(_set())
+    return f"Webhook установлен на {WEBHOOK_URL}"
+
 if __name__ == '__main__':
-    # Запускаем self-ping в отдельном потоке (как демон)
-    ping_thread = Thread(target=start_ping, daemon=True)
-    ping_thread.start()
-    logger.info("Поток для self-ping запущен.")
-
-    bot_thread = threading.Thread(target=start_bot_in_background, daemon=True)
-    bot_thread.start()
-    
-    # Запускаем Flask
-    app_flask.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
-    
-    # Запускаем бота в отдельном потоке
-    #bot_thread = Thread(target=run_bot, daemon=True)
-    #bot_thread.start()
-    #logger.info("Поток для бота запущен.")
-
-    # Запускаем Flask-сервер (блокирующий вызов в основном потоке)
-    # Для production можно использовать waitress или gunicorn, но для начала хватит и этого.
-    #logger.info("Запускаю Flask-сервер...")
-    #app_flask.run(host='0.0.0.0', port=8080)
-
-
-
-
+    app_flask.run(host='0.0.0.0', port=8080)
