@@ -3,6 +3,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler
 from flask import Flask
 from threading import Thread
+import requests
+import threading
+import time
 
 app_flask = Flask(__name__)
 
@@ -60,13 +63,29 @@ def run_bot():
 def home():
     return "Telegram Bot is running!"
 
+def ping_self():
+    """Периодически отправляет запросы к собственному серверу"""
+    while True:
+        try:
+            # Получите ваш URL из переменной окружения RENDER_EXTERNAL_URL
+            url = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:8080')
+            requests.get(url)
+        except:
+            pass
+        time.sleep(600)  # Пинг каждые 10 минут
+
 if __name__ == '__main__':
+    ping_thread = threading.Thread(target=ping_self)
+    ping_thread.daemon = True
+    ping_thread.start()
+    
     # Запускаем бота в отдельном потоке
     bot_thread = Thread(target=run_bot)
     bot_thread.start()
     
     # Запускаем Flask-сервер
     app_flask.run(host='0.0.0.0', port=8080)
+
 
 
 
