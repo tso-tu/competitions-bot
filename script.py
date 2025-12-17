@@ -1,6 +1,8 @@
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler
+from flask import Flask
+from threading import Thread
 
 TOKEN = os.environ.get('TOKEN')
 WEB_APP_URL = "https://tso-tu.github.io/competitions-miniapp/"
@@ -46,9 +48,22 @@ async def start(update: Update, context):
         parse_mode="HTML"
     )
 
+def run_bot():
+    """Функция для запуска бота в отдельном потоке"""
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
+@app_flask.route('/')
+def home():
+    return "Telegram Bot is running!"
 
-app.run_polling()
+if __name__ == '__main__':
+    # Запускаем бота в отдельном потоке
+    bot_thread = Thread(target=run_bot)
+    bot_thread.start()
+    
+    # Запускаем Flask-сервер
+    app_flask.run(host='0.0.0.0', port=8080)
+
 
