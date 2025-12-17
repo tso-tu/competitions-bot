@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler
 from flask import Flask
 from threading import Thread
+import threading
 import time
 import asyncio
 import nest_asyncio
@@ -122,6 +123,7 @@ if __name__ == '__main__':
     # Для production можно использовать waitress или gunicorn, но для начала хватит и этого.
     #logger.info("Запускаю Flask-сервер...")
     #app_flask.run(host='0.0.0.0', port=8080)
+
 
 
 
