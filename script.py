@@ -1,30 +1,43 @@
 import os
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler
 from flask import Flask
 from threading import Thread
-import requests
-import threading
 import time
 
+# === 1. Настройка логирования (ОЧЕНЬ важно для отладки) ===
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# === 2. Flask app для веб-сервера (чтобы Render был доволен) ===
 app_flask = Flask(__name__)
 
+@app_flask.route('/')
+def home():
+    return "Telegram Bot is running!"
+
+@app_flask.route('/health')
+def health():
+    return "OK", 200
+
+# === 3. Код вашего бота ===
 TOKEN = os.environ.get('TOKEN')
 WEB_APP_URL = "https://tso-tu.github.io/competitions-miniapp/"
 
 async def start(update: Update, context):
     bot_username = context.bot.username
-
-    # Кнопка с deep link
     keyboard = [[
         InlineKeyboardButton(
             "📱 ОТКРЫТЬ В ТЕЛЕГРАМ",
             url=f"https://t.me/{bot_username}?startapp=competitions-miniapp"
         )
     ]]
-
     message_text = """🎯 <b>Конкурсы и соревнования Академии ТОП</b>
-
+    
     🚀 <b>В приложении вы можете:</b>
 
     1️⃣ <b>Посмотреть информацию о конкурсах</b>
@@ -45,8 +58,8 @@ async def start(update: Update, context):
        • Рейтинги участников
        • Подведение итогов
 
-    ✨ <b>Все функции доступны в нашем мини-приложении!</b>"""
-
+    ✨ <b>Все функции доступны в нашем мини-приложении!</b>
+    """
     await update.message.reply_text(
         message_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -55,37 +68,52 @@ async def start(update: Update, context):
 
 def run_bot():
     """Функция для запуска бота в отдельном потоке"""
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+    if not TOKEN:
+        logger.error("КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения 'TOKEN' не задана.")
+        return
 
-@app_flask.route('/')
-def home():
-    return "Telegram Bot is running!"
+    try:
+        logger.info("Запускаю бота...")
+        app = Application.builder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        logger.info("Бот успешно инициализирован. Начинаю polling...")
+        app.run_polling()
+    except Exception as e:
+        logger.error(f"Бот упал с ошибкой: {e}", exc_info=True)
 
-def ping_self():
+# === 4. Функция для self-ping (чтобы сервис не засыпал) ===
+def start_ping():
     """Периодически отправляет запросы к собственному серверу"""
+    import requests
     while True:
         try:
-            # Получите ваш URL из переменной окружения RENDER_EXTERNAL_URL
-            url = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:8080')
-            requests.get(url)
-        except:
-            pass
-        time.sleep(600)  # Пинг каждые 10 минут
+            # Пингуем только если знаем свой публичный URL (т.е. работаем на Render)
+            if 'RENDER_EXTERNAL_URL' in os.environ:
+                url = os.environ['RENDER_EXTERNAL_URL']
+                # Пингуем эндпоинт /health, а не корневой
+                requests.get(f"{url}/health", timeout=10)
+                logger.debug(f"Self-ping отправлен на {url}")
+        except requests.exceptions.RequestException as e:
+            # Логируем ошибку, но не прерываем цикл
+            logger.warning(f"Не удалось отправить ping: {e}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка в ping: {e}")
+        # Ждем 4 минуты (меньше 5-минутного таймаута Render)
+        time.sleep(240)
 
+# === 5. Главная точка входа ===
 if __name__ == '__main__':
-    ping_thread = threading.Thread(target=ping_self)
-    ping_thread.daemon = True
+    # Запускаем self-ping в отдельном потоке (как демон)
+    ping_thread = Thread(target=start_ping, daemon=True)
     ping_thread.start()
-    
+    logger.info("Поток для self-ping запущен.")
+
     # Запускаем бота в отдельном потоке
-    bot_thread = Thread(target=run_bot)
+    bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
-    
-    # Запускаем Flask-сервер
+    logger.info("Поток для бота запущен.")
+
+    # Запускаем Flask-сервер (блокирующий вызов в основном потоке)
+    # Для production можно использовать waitress или gunicorn, но для начала хватит и этого.
+    logger.info("Запускаю Flask-сервер...")
     app_flask.run(host='0.0.0.0', port=8080)
-
-
-
-
