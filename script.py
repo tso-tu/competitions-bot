@@ -4,6 +4,8 @@ from telegram.ext import Application, CommandHandler
 from flask import Flask
 from threading import Thread
 
+app_flask = Flask(__name__)
+
 TOKEN = os.environ.get('TOKEN')
 WEB_APP_URL = "https://tso-tu.github.io/competitions-miniapp/"
 
@@ -65,5 +67,6 @@ if __name__ == '__main__':
     
     # Запускаем Flask-сервер
     app_flask.run(host='0.0.0.0', port=8080)
+
 
 
