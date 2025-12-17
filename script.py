@@ -68,37 +68,17 @@ async def start(update: Update, context):
         parse_mode="HTML"
     )
 
-def run_bot():
-    """Функция для запуска бота в отдельном потоке"""
-    if not TOKEN:
-        logger.error("КРИТИЧЕСКАЯ ОШИБКА: Переменная окружения 'TOKEN' не задана.")
-        return
+async def run_telegram_bot():
+    """Асинхронная функция для запуска бота"""
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    await app.run_polling()
 
-    try:
-        logger.info("Запускаю бота в отдельном потоке...")
-        
-        # Включаем поддержку вложенных event loops
-        nest_asyncio.apply()
-        
-        # Создаем новый event loop для этого потока
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Создаем и настраиваем приложение бота
-        app = Application.builder().token(TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        
-        logger.info("Бот успешно инициализирован. Начинаю polling...")
-        
-        # Запускаем бота в созданном event loop
-        loop.run_until_complete(app.run_polling())
-        
-    except Exception as e:
-        logger.error(f"Бот упал с ошибкой: {e}", exc_info=True)
-    finally:
-        # При завершении закрываем loop
-        if 'loop' in locals() and loop and not loop.is_closed():
-            loop.close()
+def start_bot_in_background():
+    """Запускает бота в фоновом режиме"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_telegram_bot())
 
 # === 4. Функция для self-ping (чтобы сервис не засыпал) ===
 def start_ping():
@@ -127,14 +107,21 @@ if __name__ == '__main__':
     ping_thread.start()
     logger.info("Поток для self-ping запущен.")
 
-    # Запускаем бота в отдельном потоке
-    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread = threading.Thread(target=start_bot_in_background, daemon=True)
     bot_thread.start()
-    logger.info("Поток для бота запущен.")
+    
+    # Запускаем Flask
+    app_flask.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+    
+    # Запускаем бота в отдельном потоке
+    #bot_thread = Thread(target=run_bot, daemon=True)
+    #bot_thread.start()
+    #logger.info("Поток для бота запущен.")
 
     # Запускаем Flask-сервер (блокирующий вызов в основном потоке)
     # Для production можно использовать waitress или gunicorn, но для начала хватит и этого.
-    logger.info("Запускаю Flask-сервер...")
-    app_flask.run(host='0.0.0.0', port=8080)
+    #logger.info("Запускаю Flask-сервер...")
+    #app_flask.run(host='0.0.0.0', port=8080)
+
 
 
